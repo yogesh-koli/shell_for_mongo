@@ -1,0 +1,139 @@
+  GNU nano 4.8                                                                                                                                                                                                                                                                                                                                                                                                                version_update.sh                                                                                                                                                                                                                                                                                                                                                                                                                          #! /bin/bash
+# Function to display script usage
+usage() {
+  echo "Usage: ./mongodb_backup.sh [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "     -c, --collection        Mongodb collection name"
+  echo "     -d, --database          Mongodb batabase name"
+  echo "     -H, --host              Mongodb host name"
+  echo "     -P, --port              Mongodb port number"
+  echo "*    -u, --username          Mongodb username"
+  echo "*    -p, --password          Mongodb password"
+  echo "     -h, --help              Display this help message"
+  echo ""
+}
+# Parse command-line options
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c|--collection)
+      param_c="$2"
+      shift 2
+      ;;
+    -d|--database)
+      param_d="$2"
+      shift 2
+      ;;
+    -H|--host)
+      param_H="$2"
+      shift 2
+      ;;
+    -P|--port)
+      param_P="$2"
+      shift 2
+      ;;
+    -u|--username)
+      param_u="$2"
+      shift 2
+      ;;
+    -p|--password)
+      param_p="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Invalid option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Check if required parameters are provided
+if  [ -z "$param_u" ] || [ -z "$param_p" ] ; then
+  echo "Error: Insufficient parameters!"
+  echo "Use $0 -h/--help for more details"
+  exit 1
+fi
+export PATH=$PATH:/opt/mongodb/bin
+
+MONGO_HOST="${param_H:-localhost}"
+MONGO_PORT="${param_P:-27017}"
+MONGO_DB="${param_d:-framework}"
+MONGO_COLLECTION="${param_c:-version}"
+MONGO_USER="$param_u"
+MONGO_PASS="$param_p"
+MONGO_AUTH_DB="admin"
+
+
+
+if [[ $MONGO_COLLECTION = "version" ]]; then
+LATEST_FILE_INFO=$(mongo --host $MONGO_HOST --port $MONGO_PORT --username $MONGO_USER --password $MONGO_PASS --authenticationDatabase $MONGO_AUTH_DB <<EOF
+use $MONGO_DB;
+db.getCollection("$MONGO_COLLECTION").updateMany({}, { \$set: { "active": "N" } });
+EOF
+)
+echo $LATEST_FILE_INFO
+
+LATEST_FILE_INFO=$(mongo --host $MONGO_HOST --port $MONGO_PORT --username $MONGO_USER --password="20Inferyx19" --authenticationDatabase "admin" <<EOF
+use $MONGO_DB;
+db.getCollection("$MONGO_COLLECTION").find({
+  "name": { \$regex: /[0-9]+\.[0-9]+/ }
+}).sort({ "releaseDate": -1 }).limit(1);
+EOF
+ )
+
+LATEST_DOC_ID=$(echo "$LATEST_FILE_INFO" | awk -F'"' '/"_id"/ {print $4}')
+
+echo $LATEST_DOC_ID
+result=$(mongo --host $MONGO_HOST --port $MONGO_PORT --username $MONGO_USER --password "20Inferyx19" --authenticationDatabase "admin" <<EOF
+use $MONGO_DB;
+db.getCollection("$MONGO_COLLECTION").update({ "_id": ObjectId("$LATEST_DOC_ID") }, { \$set: { "active": "Y" } });
+EOF
+)
+echo $result
+else
+result1=$(mongo --host $MONGO_HOST --port $MONGO_PORT --username $MONGO_USER --password "20Inferyx19" --authenticationDatabase "admin" <<EOF
+use $MONGO_DB;
+db.getCollectionNames().forEach(function(collName){
+   if(collName.indexOf("exec") ==-1 && ['session','activity','vertex','edge','message','meta','datastore',"results","results1"].indexOf(collName) ==-1){
+      printjson(collName)  
+       db.getCollection(collName).find({}).forEach(
+        function (elem) {
+            elem.active="N"
+            db.getCollection(collName).updateMany({ _id: elem._id },{ "$set": { "active": elem.active}});
+        } )  
+    }
+})
+
+db.getCollectionNames().forEach(function(collName){
+    if(collName.indexOf("exec") ==-1 && ['session','activity','vertex','edge','message','meta','datastore',"results","results1"].indexOf(collName) ==-1){
+         printjson(collName)  
+       db.getCollection(collName).aggregate([{ "$group" : { "_id" : "$uuid" , "version" : { "$max" : "$version"},data: { $push: "$$ROOT" }}}]).forEach(
+            function (elem) {
+                //printjson("outside for loop"+elem.version)
+                if(elem.data !=null && elem.data.length >0){
+                  for(let i=0;i<elem.data.length;i++){
+                     //printjson("insie for"+elem.data[i].version)
+                      if(elem.version==elem.data[i].version){
+                        ///printjson("match")
+                        //print(elem.data[i])
+                        db.getCollection(collName).updateMany({ _id: elem.data[i]._id },{ "$set": { "active":"Y"}});
+                        break;
+                     }
+                  }
+                }  
+        })
+    }
+  })
+EOF
+)
+echo $result1
+fi
+
+
+
+
+
